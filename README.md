@@ -1,4 +1,4 @@
 
 # Description
 
-The WaVeD model is the Water and Vegetation Dynamics in water controlled environments.
+The WaVeGraD model is the Water Vegetation and Grazing Dynamics in water controlled environments.
