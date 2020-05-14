@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 # Classes -----------------------------------------------------------
 
-class SoilWB:
+class Soil:
 
     def __init__(self, s=None, rain=None, dt=None, **kwargs):
         self.p = kwargs
@@ -31,6 +31,7 @@ class SoilWB:
          """
         s = self.s
         p = self.p
+        # print(p['emax'])
         if s < p['sw']:
             et = p['ew'] * (s - p['sh']) / (p['sw'] - p['sh'])
         elif p['sw'] < s <= p['sstar']:
@@ -48,10 +49,31 @@ class SoilWB:
         """
         s = self.s
         p = self.p
-        lk = p['ks'] * s ** (2 * p['phi'] + 3)
+        lk = p['ks'] * s ** (2 * p['b'] + 3)
         return lk
 
-    def swbdt(self):
+    def runoff(self):
+        s = self.s
+        if s > 1.0:
+            q = s - 1
+            s = 1
+        else:
+            s = s
+            q = 0
+        return [s, q]
+
+    def assimilation(self):
+        p = self.p
+        s = self.s
+        if s <= p['sw']:
+            asm = 0
+        elif s > p['sstar']:
+            asm = 1
+        else:
+            asm = (s - p['sw']) / (p['sstar'] - p['sw'])
+        return asm
+
+    def swbs(self):
         """
         Runs the soil water balance model for each component and
         returns a dictionary with daily simulation.
@@ -59,7 +81,6 @@ class SoilWB:
         :return: the water balance components (s, ET, Lk, and Q)
         at daily scale.
         """
-        s = self.s
         p = self.p
         if self.dt is None:
             dt = 1 / 48
@@ -72,7 +93,6 @@ class SoilWB:
         lk = []
         qr = []
         for i in np.arange(nr):
-            # q = 0
             if i == 0:
                 if self.rain is None:
                     self.rain = 0
@@ -81,84 +101,59 @@ class SoilWB:
                 rain = self.rain
             else:
                 rain = 0
-
-            s_in = s + rain / swsc
-            if s_in > 1.0:
-                q = (s_in - 1.0) * swsc
-                s_in = 1.0
-            else:
-                q = 0
-            etr = (SoilWB.evapotranspiration(self) / swsc) * dt
-            lkr = (SoilWB.leakage(self) / swsc) * dt
-            s = s_in - (etr + lkr)
+            self.s = self.s + rain / swsc
+            self.s, q = Soil.runoff(self)
+            q = q * swsc
+            etr = (Soil.evapotranspiration(self) / swsc) * dt
+            lkr = (Soil.leakage(self) / swsc) * dt
+            self.s = self.s - (etr + lkr)
             # print(s)
-            sr.append(s)
+            sr.append(self.s)
             et.append(etr * swsc)
             lk.append(lkr * swsc)
             qr.append(q)
             self.s = sr[-1]
-        rswb = dict(sr=sr[-1], rain=self.rain, s=np.mean(sr), ET=np.sum(et), Lk=np.sum(lk), Q=np.sum(qr))
+        self.s = np.mean(sr)
+        rswb = dict(sr=sr[-1], rain=self.rain, s=np.mean(sr),
+                    ET=np.sum(et), Lk=np.sum(lk), Q=np.sum(qr),
+                    Asm=Soil.assimilation(self))
         return rswb
 
-    def swbday(self):
-        """
-        Runs the soil water balance model for a rainfall series and
-        compute the water balance component (s, ET, Lk, and Q) and
-        the soil penetration resistance.
 
-        :return: water balance components and soil penetration
-        resistance for the same amount of days in the rainfall series.
-        """
-        p = self.p
-        if self.s is None:
-            self.s = (0.75 * p['sh'] + 1.25 * p['sw']) / 2
-        else:
-            self.s = self.s
-        rains = self.rain
-        nr = len(rains)
-        s_out = np.zeros(nr)
-        et_out = np.zeros(nr)
-        lk_out = np.zeros(nr)
-        q_out = np.zeros(nr)
-        nrr = np.arange(nr)
-        for i in tqdm(nrr):
-            self.rain = rains[i]
-            swbr = SoilWB.swbdt(self)
-            self.s = swbr['sr']
-            s_out[i] = np.round(swbr['s'], 4)
-            et_out[i] = np.round(swbr['ET'], 4)
-            lk_out[i] = np.round(swbr['Lk'], 4)
-            q_out[i] = np.round(swbr['Q'], 4)
-        out = pd.DataFrame({'Rain': self.rain, 's': s_out, 'ET': et_out,
-                            'Lk': lk_out, 'Q': q_out})
-        return out
+class Vegetation:
 
-
-class SwbVg(object):
-    def __init__(self, rain, s, ndvi, dt, **kwargs):
+    def __init__(self, A=None, rain=None, btr=None, **kwargs):
+        self.A = A
         self.rain = rain
-        self.s = s
-        self.ndvi = ndvi
-        self.dt = dt
         self.p = kwargs
-        # self.res = SwbVg.run(self)
+        print(self.p)
+        self.btr = btr
+        if self.btr is None:
+            self.btr = 1
+        else:
+            self.btr = self.btr
+        self.dt = 1
+        print(self.p)
+
+    def biomassNDVI(self):
+        ndvi = (self.btr / self.p['kappa']) + self.p['nmin']
+        return ndvi
 
     def etmaxrate(self):
         p = self.p
-        ndvi = self.ndvi
-        nc = 2 * (ndvi - p['Nmin'])
-        nx = p['Nmax'] - p['Nmin']
-        emax = p['emax0'] * (1 + (p['eta'] * ((nc / nx) - 1)))
+        ndvi = Vegetation.biomassNDVI(self)
+        nc = 2 * (ndvi - p['nmin'])
+        nx = p['nmax'] - p['nmin']
+        emax = p['emaxb'] * (1 + (p['eta'] * ((nc / nx) - 1)))
         return emax
 
     def canopyinterception(self):
         p = self.p
-        ndvi = self.ndvi
+        ndvi = Vegetation.biomassNDVI(self)
         rain = self.rain
         laimax = 0.447 * np.exp(1.9363 * 1)
-        lai0 = 0.447 * np.exp(1.9363 * ndvi / p['Nmax'])
+        lai0 = 0.447 * np.exp(1.9363 * ndvi / p['nmax'])
         alpha_f = lai0 / laimax
-        # alpha_f =1
         Rstar = 0.5
         if rain < Rstar:
             ic = alpha_f * rain
@@ -169,15 +164,112 @@ class SwbVg(object):
 
     def throughfall(self):
         rain = self.rain
-        return rain - SwbVg.canopyinterception(self)
+        return rain - Vegetation.canopyinterception(self)
 
-    def assimilation(self):
+    def fodder(self):
         p = self.p
-        s = self.s
-        if s <= p['sw']:
-            asm = 0
-        elif s > p['sstar']:
-            asm = 1
+        btr = self.btr
+        bmax = p['kappa'] * (p['nmax'] - p['nmin'])
+        thinf = p['thn'] * bmax
+        thsup = p['thx'] * bmax
+        if btr <= thinf:
+            return 0
+        elif btr > thsup:
+            return 1
         else:
-            asm = (s - p['sw']) / (p['sstar'] - p['sw'])
-        return asm
+            return (btr - thinf) / (thsup - thinf)
+
+    def biomass(self):
+        p = self.p
+        bmax = p['kappa'] * (p['nmax'] - p['nmin'])
+        btr = self.btr
+        dt = 1
+        dvb = p['ka'] * self.A * (bmax - btr) - p['kr'] * btr
+        vb = btr + dvb * dt
+        return vb
+
+
+class Cattle:
+
+    def __init__(self, C0=None, nc=1, fodder=None, **kwargs):
+        self.C = C0
+        self.fodder = fodder
+        self.nc = nc
+        self.p = kwargs
+        pass
+
+    def cattle(self):
+        p = self.p
+        C = self.C
+        nc = self.nc
+        fodder = self.fodder
+        weight = fodder * p['kg'] * C * (1 - C / (nc * p['cmax'])) - p['kd'] * C
+        return weight
+
+
+class Wvgd:
+
+    def __init__(self, s0=None, C0=0, nc=1, rain=None, dt=None, btr=1, **kwargs):
+        self.p = kwargs
+        self.s = s0
+        self.C = C0
+        self.nc = nc
+        self.rain = rain
+        self.dt = dt
+        self.btr = btr
+        self.A = None
+        self.fodder = None
+
+    def wavegrad(self):
+        # p = self.p
+        # Initial value of s0 if None is provided
+        if self.s is None:
+            self.s = (0.75 * self.p['sh'] + 1.25 * self.p['sw']) / 2
+        else:
+            self.s = self.s
+        rains = self.rain
+        nr = len(rains)
+        s_out = np.zeros(nr)
+        cint_out = np.zeros(nr)
+        et_out = np.zeros(nr)
+        lk_out = np.zeros(nr)
+        q_out = np.zeros(nr)
+        db_out = np.zeros(nr)
+        dc_out = np.zeros(nr)
+        nrr = np.arange(nr)
+        dayC0 = 120
+        for i in tqdm(nrr):
+            # Effects vegetation on ETmax
+            self.p['emax'] = Vegetation.etmaxrate(self)
+            # p = self.p
+            # Effects vegetation on Canopy Interception
+            self.rain = rains[i]
+            cint_out[i] = Vegetation.canopyinterception(self)
+            self.rain = self.rain - cint_out[i]
+            swbr = Soil.swbs(self)
+            self.s = swbr['sr']
+
+            # Vegetation and aninal growth
+            self.fodder = Vegetation.fodder(self)
+            if i < dayC0:
+                dc_out[i] = 0
+            else:
+                dc_out[i] = self.C + Cattle.cattle(self) * 1.0
+                self.C = dc_out[i]
+            self.A = Soil.assimilation(self)
+            db_out[i] = Vegetation.biomass(self) - self.p['fC'] * dc_out[i] * self.fodder
+            self.btr = db_out[i]
+
+            # Prepare outputs
+            cint_out = np.round(cint_out, 4)
+            s_out[i] = np.round(swbr['s'], 4)
+            et_out[i] = np.round(swbr['ET'], 4)
+            lk_out[i] = np.round(swbr['Lk'], 4)
+            q_out[i] = np.round(swbr['Q'], 4)
+            db_out = np.round(db_out, 2)
+            dc_out = np.round(dc_out, 2)
+        out = pd.DataFrame({'Rain': rains, 'Cint': cint_out, 's': s_out,
+                            'ET': et_out, 'Lk': lk_out, 'Q': q_out,
+                            'VegBiomass': db_out, 'AnimalWeight': dc_out})
+
+        return out
