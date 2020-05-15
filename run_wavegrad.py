@@ -11,10 +11,11 @@ import matplotlib.pyplot as plt
 from src import wavegradm as wvg
 
 # Data and parameters -----------------------------------------------
-ap = {'sh': 0.08,
+# All parameters
+ap = {'sh': 0.10,
       'sw': 0.13,
-      'sstar': 0.23,
-      'ks': 201,
+      'sstar': 0.25,
+      'ks': 205,
       'b': 4.38,
       'n': 0.48,
       'zr': 40,
@@ -39,9 +40,8 @@ drain = pd.read_csv('data/Data_rainfall.csv')
 rainfall = drain.rain.values
 
 # Run the model -----------------------------------------------------
-simulation = wvg.Wvgd(C0=150, rain=rainfall, **ap).wavegrad()
-print(simulation)
+simulation = wvg.Wvgd(C0=120, rain=rainfall, **ap).wavegrad()
+# print(simulation)
 
 simulation.to_csv('results/WaVeGraD_simulation.csv')
-plt.plot(simulation.AnimalWeight)
-plt.show()
+wvg.Plots(simulation).plotres()

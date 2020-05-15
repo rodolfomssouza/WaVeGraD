@@ -9,6 +9,7 @@ Main models
 # Packages ----------------------------------------------------------
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 
@@ -273,3 +274,43 @@ class Wvgd:
                             'VegBiomass': db_out, 'AnimalWeight': dc_out})
 
         return out
+
+
+class Plots:
+
+    def __init__(self, df=None):
+        self.df = df
+
+    def plotres(self):
+        df = self.df
+        days = np.arange(len(df.Rain))
+        fig = plt.figure(figsize=(16, 8))
+
+        ax1 = fig.add_subplot(321)
+        ax1.bar(days, df.Rain)
+        ax1.set_ylabel('Rain (cm)')
+        
+        ax2 = fig.add_subplot(322)
+        ax2.plot(df.s)
+        ax2.set_ylabel('Soil moisture')
+        
+        ax3 = fig.add_subplot(323)
+        ax3.plot(df.VegBiomass)
+        ax3.set_ylabel('Biomass (kg)')
+
+        ax4 = fig.add_subplot(324)
+        ax4.plot(df.ET)
+        ax4.set_ylabel('ET (cm/day)')
+
+        ax5 = fig.add_subplot(325)
+        ax5.plot(df.AnimalWeight)
+        ax5.set_xlabel('Days')
+        ax5.set_ylabel('Cows (kg)')
+
+        ax6 = fig.add_subplot(326)
+        ax6.plot(df.Lk)
+        ax6.set_xlabel('Days')
+        ax6.set_ylabel('Leakage (cm/day)')
+
+        plt.tight_layout()
+        plt.savefig('results/Figure_simation.pdf')
