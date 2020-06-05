@@ -313,4 +313,4 @@ class Plots:
         ax6.set_ylabel('Leakage (cm/day)')
 
         plt.tight_layout()
-        plt.savefig('results/Figure_simation.pdf')
+        plt.savefig('results/Figure_simulation.pdf')
